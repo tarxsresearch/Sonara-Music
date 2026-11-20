@@ -9,24 +9,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Unzip project
+        run: |
+          mkdir -p "$RUNNER_TEMP/proj"
+          unzip -q Sonara.zip -d "$RUNNER_TEMP/proj"
+          GRADLEW=$(find "$RUNNER_TEMP/proj" -name gradlew -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$GRADLEW" ]; then
+            echo "No gradlew found inside Sonara.zip. Top-level contents:"
+            ls -R "$RUNNER_TEMP/proj" | head -50
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$GRADLEW")" >> "$GITHUB_ENV"
+
+      - name: Apply Sonara patch if present
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          [ -f scripts/apply_sonara.py ] && python3 scripts/apply_sonara.py || echo "no branding script"
+          [ -f scripts/apply_sonara_ui.py ] && python3 scripts/apply_sonara_ui.py || echo "no UI script"
+
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: 21
           distribution: temurin
-          cache: gradle
 
       - name: Accept Android SDK licenses
         run: yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
       - name: Build debug APK
-        run: ./gradlew assembleCoreDebug --stacktrace -DskipFormatKtlint
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleCoreDebug --stacktrace -DskipFormatKtlint
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Sonara-APK
-          path: app/build/outputs/apk/core/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/core/debug/*.apk
